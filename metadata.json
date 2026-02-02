@@ -1,0 +1,5 @@
+{
+  "name": "BizDev Innovation Survey",
+  "description": "A structured survey application for Business Development & Product Innovation retrospectives with CSV export capabilities.",
+  "requestFramePermissions": []
+}
