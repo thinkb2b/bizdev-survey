@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { SurveySubmission } from '../types';
 import { generateCSV } from '../services/csvService';
-import { Download, Trash2, ArrowLeft } from 'lucide-react';
+import { Download, Trash2, ArrowLeft, Eye } from 'lucide-react';
 
 interface AdminDashboardProps {
   submissions: SurveySubmission[];
   onDelete: (ids: string[]) => void;
+  onView: (submission: SurveySubmission) => void;
   onBack: () => void;
 }
 
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ submissions, onDelete, onBack }) => {
+const AdminDashboard: React.FC<AdminDashboardProps> = ({ submissions, onDelete, onView, onBack }) => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Reset selection if submissions change (e.g. after delete)
@@ -17,7 +18,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ submissions, onDelete, 
     setSelectedIds(new Set());
   }, [submissions.length]);
 
-  const toggleSelectAll = () => {
+  const toggleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
     if (selectedIds.size === submissions.length) {
       setSelectedIds(new Set());
     } else {
@@ -119,19 +121,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ submissions, onDelete, 
                 <th className="p-4">Position</th>
                 <th className="p-4">Zeit im Unternehmen</th>
                 <th className="p-4">Antworten (Preview)</th>
+                <th className="p-4 w-10"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {submissions.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-400">
+                  <td colSpan={7} className="p-8 text-center text-slate-400">
                     Noch keine Antworten vorhanden.
                   </td>
                 </tr>
               ) : (
                 submissions.map((sub) => (
-                  <tr key={sub.id} className={`hover:bg-slate-50 transition-colors ${selectedIds.has(sub.id) ? 'bg-blue-50/50' : ''}`}>
-                    <td className="p-4 text-center">
+                  <tr 
+                    key={sub.id} 
+                    onClick={() => onView(sub)}
+                    className={`hover:bg-blue-50/30 transition-colors cursor-pointer group ${selectedIds.has(sub.id) ? 'bg-blue-50/50' : ''}`}
+                  >
+                    <td className="p-4 text-center" onClick={(e) => e.stopPropagation()}>
                         <input 
                             type="checkbox" 
                             checked={selectedIds.has(sub.id)}
@@ -149,6 +156,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ submissions, onDelete, 
                     <td className="p-4">{sub.personalInfo.yearsInCompany}</td>
                     <td className="p-4 text-xs text-slate-400 max-w-xs truncate">
                         {Object.keys(sub.answers).length} Fragen beantwortet
+                    </td>
+                    <td className="p-4 text-right">
+                        <Eye className="w-4 h-4 text-slate-300 group-hover:text-blue-500" />
                     </td>
                   </tr>
                 ))

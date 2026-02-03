@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { SURVEY_BLOCKS } from '../constants';
 import { PersonalInfo, SurveySubmission, SurveyBlock } from '../types';
-import { Save, ChevronRight, ChevronLeft, User, LayoutList } from 'lucide-react';
+import { Save, ChevronRight, ChevronLeft, User, LayoutList, Lock, Unlock } from 'lucide-react';
 
 interface SurveyFormProps {
+  initialData: SurveySubmission | null;
   onSubmit: (submission: SurveySubmission) => void;
   onOpenAdmin: () => void;
 }
@@ -27,7 +28,7 @@ const generateId = () => {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
 };
 
-const SurveyForm: React.FC<SurveyFormProps> = ({ onSubmit, onOpenAdmin }) => {
+const SurveyForm: React.FC<SurveyFormProps> = ({ initialData, onSubmit, onOpenAdmin }) => {
   const [personalInfo, setPersonalInfo] = useState<PersonalInfo>({
     firstName: '',
     lastName: '',
@@ -38,42 +39,60 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSubmit, onOpenAdmin }) => {
 
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  
+  // Logic for Edit Mode
+  // If initialData exists, we start in read-only mode.
+  const [isReadOnly, setIsReadOnly] = useState<boolean>(!!initialData);
 
-  // Load draft from local storage
+  // Initialize form with existing data or load draft
   useEffect(() => {
-    const saved = localStorage.getItem('survey_draft');
-    if (saved) {
-      try {
-        const { personalInfo: savedPi, answers: savedAns, step } = JSON.parse(saved);
-        if (savedPi) setPersonalInfo(savedPi);
-        if (savedAns) setAnswers(savedAns);
-        if (typeof step === 'number') setCurrentStepIndex(step);
-      } catch (e) {
-        console.error("Failed to load draft", e);
-      }
+    if (initialData) {
+        // Load existing submission
+        setPersonalInfo(initialData.personalInfo);
+        setAnswers(initialData.answers);
+        setIsReadOnly(true);
+        setCurrentStepIndex(0);
+    } else {
+        // Load draft from local storage ONLY if not editing an existing record
+        const saved = localStorage.getItem('survey_draft');
+        if (saved) {
+            try {
+                const { personalInfo: savedPi, answers: savedAns, step } = JSON.parse(saved);
+                if (savedPi) setPersonalInfo(savedPi);
+                if (savedAns) setAnswers(savedAns);
+                if (typeof step === 'number') setCurrentStepIndex(step);
+            } catch (e) {
+                console.error("Failed to load draft", e);
+            }
+        }
     }
-  }, []);
+  }, [initialData]);
 
-  // Save draft on change
+  // Save draft on change (only if NEW survey)
   useEffect(() => {
-    localStorage.setItem('survey_draft', JSON.stringify({ 
-        personalInfo, 
-        answers,
-        step: currentStepIndex
-    }));
-  }, [personalInfo, answers, currentStepIndex]);
+    if (!initialData) {
+        localStorage.setItem('survey_draft', JSON.stringify({ 
+            personalInfo, 
+            answers,
+            step: currentStepIndex
+        }));
+    }
+  }, [personalInfo, answers, currentStepIndex, initialData]);
 
   const handleAnswerChange = (id: string, value: string) => {
+    if (isReadOnly) return;
     setAnswers(prev => ({ ...prev, [id]: value }));
   };
 
   const handleInfoChange = (field: keyof PersonalInfo, value: string) => {
+    if (isReadOnly) return;
     setPersonalInfo(prev => ({ ...prev, [field]: value }));
   };
 
   const handleNext = () => {
     // Validation for Personal Info (Step 0)
-    if (currentStepIndex === 0) {
+    // Only validate if editing is enabled (if readonly, we assume data is valid)
+    if (!isReadOnly && currentStepIndex === 0) {
         if (!personalInfo.firstName.trim() || !personalInfo.lastName.trim()) {
             alert("Bitte gib zumindest Vor- und Nachname an.");
             return;
@@ -96,8 +115,21 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSubmit, onOpenAdmin }) => {
   };
 
   const handleSubmit = () => {
+    // In ReadOnly mode, "Save" just closes/finishes, but ideally we shouldn't even show "Save" unless edited?
+    // For simplicity, let's allow re-saving (updating) if not read-only.
+    
+    if (isReadOnly) {
+        // If simply viewing, clicking "Finish" effectively just calls submit with same data
+        // or we could just alert. But better UX: if ReadOnly, maybe button says "Close"?
+        // Current requirement: "Overwrite/Change via checkbox". 
+        // We will stick to submit logic.
+    }
+
     const submission: SurveySubmission = {
-      id: generateId(),
+      // Keep ID if editing, else generate new
+      id: initialData?.id || generateId(),
+      // Update timestamp if editing? Let's keep original timestamp or update to now? 
+      // Usually "Last Modified" is better, but for simplicity let's update timestamp so it bubbles to top of lists if sorted.
       timestamp: Date.now(),
       personalInfo,
       answers
@@ -105,17 +137,19 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSubmit, onOpenAdmin }) => {
 
     onSubmit(submission);
     
-    // Clear form and draft
-    setPersonalInfo({
-        firstName: '',
-        lastName: '',
-        position: '',
-        yearsInCompany: '',
-        workingYears: ''
-    });
-    setAnswers({});
-    localStorage.removeItem('survey_draft');
-    setCurrentStepIndex(0);
+    // Clear form and draft only if it was a new submission
+    if (!initialData) {
+        setPersonalInfo({
+            firstName: '',
+            lastName: '',
+            position: '',
+            yearsInCompany: '',
+            workingYears: ''
+        });
+        setAnswers({});
+        localStorage.removeItem('survey_draft');
+        setCurrentStepIndex(0);
+    }
     window.scrollTo(0,0);
   };
 
@@ -132,8 +166,34 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSubmit, onOpenAdmin }) => {
         </button>
       </div>
 
-      {/* Header / Intro (Only visible on Step 0) */}
-      {currentStepIndex === 0 && (
+      {/* Edit Mode Toggle Banner */}
+      {initialData && (
+          <div className={`p-4 rounded-xl border flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-colors ${isReadOnly ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
+              <div className="flex items-center gap-3">
+                  {isReadOnly ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
+                  <div>
+                    <div className="font-bold">
+                        {isReadOnly ? 'Ansichtsmodus (Read-only)' : 'Bearbeitungsmodus aktiv'}
+                    </div>
+                    <div className="text-sm opacity-80">
+                        {isReadOnly ? 'Um Daten zu ändern, aktiviere die Bearbeitung.' : 'Änderungen werden beim Speichern am Ende übernommen.'}
+                    </div>
+                  </div>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-lg border border-slate-200 shadow-sm hover:bg-slate-50">
+                  <input 
+                    type="checkbox" 
+                    checked={!isReadOnly}
+                    onChange={(e) => setIsReadOnly(!e.target.checked)}
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-slate-700">Bearbeitung aktivieren</span>
+              </label>
+          </div>
+      )}
+
+      {/* Header / Intro (Only visible on Step 0 AND if not editing) */}
+      {currentStepIndex === 0 && !initialData && (
           <div className="space-y-4 text-center md:text-left animate-fade-in-up">
             <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight">
               Business Development &<br className="md:hidden"/> Produktinnovation
@@ -161,7 +221,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSubmit, onOpenAdmin }) => {
       </div>
 
       {/* Form Content Area */}
-      <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden min-h-[400px] flex flex-col">
+      <div className={`bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden min-h-[400px] flex flex-col transition-opacity ${isReadOnly ? 'opacity-90' : 'opacity-100'}`}>
         {/* Step Header */}
         <div className="bg-slate-50 border-b border-slate-100 p-6 flex items-center gap-3">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${currentStep.type === 'personal' ? 'bg-indigo-100 text-indigo-600' : 'bg-blue-100 text-blue-600'}`}>
@@ -185,17 +245,19 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSubmit, onOpenAdmin }) => {
                      <label className="block text-sm font-medium text-slate-700">Vorname <span className="text-red-500">*</span></label>
                      <input 
                          type="text" 
-                         className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                         disabled={isReadOnly}
+                         className={`w-full px-4 py-3 border rounded-lg outline-none transition-all ${isReadOnly ? 'bg-slate-50 text-slate-600 border-slate-200' : 'border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500'}`}
                          value={personalInfo.firstName}
                          onChange={(e) => handleInfoChange('firstName', e.target.value)}
-                         autoFocus
+                         autoFocus={!isReadOnly}
                      />
                  </div>
                  <div className="space-y-2">
                      <label className="block text-sm font-medium text-slate-700">Nachname <span className="text-red-500">*</span></label>
                      <input 
                          type="text" 
-                         className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                         disabled={isReadOnly}
+                         className={`w-full px-4 py-3 border rounded-lg outline-none transition-all ${isReadOnly ? 'bg-slate-50 text-slate-600 border-slate-200' : 'border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500'}`}
                          value={personalInfo.lastName}
                          onChange={(e) => handleInfoChange('lastName', e.target.value)}
                      />
@@ -204,7 +266,8 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSubmit, onOpenAdmin }) => {
                      <label className="block text-sm font-medium text-slate-700">Rolle / Position</label>
                      <input 
                          type="text" 
-                         className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                         disabled={isReadOnly}
+                         className={`w-full px-4 py-3 border rounded-lg outline-none transition-all ${isReadOnly ? 'bg-slate-50 text-slate-600 border-slate-200' : 'border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500'}`}
                          value={personalInfo.position}
                          onChange={(e) => handleInfoChange('position', e.target.value)}
                      />
@@ -213,8 +276,9 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSubmit, onOpenAdmin }) => {
                      <label className="block text-sm font-medium text-slate-700">Zeit im Unternehmen</label>
                      <input 
                          type="text" 
+                         disabled={isReadOnly}
                          placeholder="z.B. 3 Jahre oder 6 Monate"
-                         className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                         className={`w-full px-4 py-3 border rounded-lg outline-none transition-all ${isReadOnly ? 'bg-slate-50 text-slate-600 border-slate-200' : 'border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500'}`}
                          value={personalInfo.yearsInCompany}
                          onChange={(e) => handleInfoChange('yearsInCompany', e.target.value)}
                      />
@@ -223,8 +287,9 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSubmit, onOpenAdmin }) => {
                      <label className="block text-sm font-medium text-slate-700">Berufserfahrung (Gesamt)</label>
                      <input 
                          type="text" 
+                         disabled={isReadOnly}
                          placeholder="z.B. 10 Jahre"
-                         className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                         className={`w-full px-4 py-3 border rounded-lg outline-none transition-all ${isReadOnly ? 'bg-slate-50 text-slate-600 border-slate-200' : 'border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500'}`}
                          value={personalInfo.workingYears}
                          onChange={(e) => handleInfoChange('workingYears', e.target.value)}
                      />
@@ -255,7 +320,8 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSubmit, onOpenAdmin }) => {
                             
                             {q.type === 'select' ? (
                                 <select
-                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                    disabled={isReadOnly}
+                                    className={`w-full px-4 py-3 border rounded-xl outline-none transition-all ${isReadOnly ? 'bg-slate-50 text-slate-600 border-slate-200 appearance-none' : 'bg-slate-50 border-slate-300 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500'}`}
                                     value={answers[q.id] || ''}
                                     onChange={(e) => handleAnswerChange(q.id, e.target.value)}
                                 >
@@ -266,8 +332,9 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSubmit, onOpenAdmin }) => {
                                 </select>
                             ) : (
                                 <textarea
-                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all min-h-[100px]"
-                                    placeholder="Deine Antwort..."
+                                    disabled={isReadOnly}
+                                    className={`w-full px-4 py-3 border rounded-xl outline-none transition-all min-h-[100px] ${isReadOnly ? 'bg-slate-50 text-slate-600 border-slate-200' : 'bg-slate-50 border-slate-300 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500'}`}
+                                    placeholder={isReadOnly ? "Keine Antwort" : "Deine Antwort..."}
                                     value={answers[q.id] || ''}
                                     onChange={(e) => handleAnswerChange(q.id, e.target.value)}
                                 />
@@ -308,7 +375,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSubmit, onOpenAdmin }) => {
             {currentStepIndex === STEPS.length - 1 ? (
                 <>
                     <Save className="w-5 h-5" />
-                    Antworten speichern
+                    {isReadOnly ? 'Schließen / Speichern' : 'Antworten speichern'}
                 </>
             ) : (
                 <>
