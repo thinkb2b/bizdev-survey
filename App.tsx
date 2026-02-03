@@ -15,6 +15,8 @@ const generateId = () => {
 export default function App() {
   const [view, setView] = useState<'form' | 'admin' | 'success'>('form');
   const [submissions, setSubmissions] = useState<SurveySubmission[]>([]);
+  // State to hold the submission currently being viewed/edited
+  const [editingSubmission, setEditingSubmission] = useState<SurveySubmission | null>(null);
 
   useEffect(() => {
     // Load existing submissions from local storage
@@ -49,9 +51,21 @@ export default function App() {
   }, []);
 
   const handleSubmission = (submission: SurveySubmission) => {
-    const updated = [...submissions, submission];
+    let updated;
+    
+    // Check if we are updating an existing submission
+    const existingIndex = submissions.findIndex(s => s.id === submission.id);
+    
+    if (existingIndex >= 0) {
+        updated = [...submissions];
+        updated[existingIndex] = submission;
+    } else {
+        updated = [...submissions, submission];
+    }
+
     setSubmissions(updated);
     localStorage.setItem('survey_submissions', JSON.stringify(updated));
+    setEditingSubmission(null); // Clear editing state
     setView('success');
   };
 
@@ -79,11 +93,22 @@ export default function App() {
     }
   };
 
+  const handleViewSubmission = (submission: SurveySubmission) => {
+      setEditingSubmission(submission);
+      setView('form');
+  };
+
+  const startNewSurvey = () => {
+      setEditingSubmission(null);
+      setView('form');
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-200">
       
       {view === 'form' && (
         <SurveyForm 
+            initialData={editingSubmission}
             onSubmit={handleSubmission} 
             onOpenAdmin={() => setView('admin')} 
         />
@@ -97,11 +122,11 @@ export default function App() {
             </div>
             <h2 className="text-3xl font-bold text-slate-900 mb-4">Vielen Dank!</h2>
             <p className="text-slate-600 mb-8 text-lg">
-              Deine Antworten wurden lokal gespeichert.
+              Die Antworten wurden lokal gespeichert.
             </p>
             <div className="flex flex-col gap-3">
                 <button 
-                onClick={() => setView('form')}
+                onClick={startNewSurvey}
                 className="w-full py-3 px-6 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg hover:shadow-xl"
                 >
                 Neue Antwort erfassen
@@ -110,7 +135,7 @@ export default function App() {
                 onClick={() => setView('admin')}
                 className="w-full py-3 px-6 bg-white border-2 border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-colors"
                 >
-                Zum Admin Dashboard (Export)
+                Zum Admin Dashboard
                 </button>
             </div>
           </div>
@@ -121,7 +146,8 @@ export default function App() {
         <AdminDashboard 
           submissions={submissions}
           onDelete={handleDelete}
-          onBack={() => setView('form')}
+          onView={handleViewSubmission}
+          onBack={startNewSurvey}
         />
       )}
     </div>
